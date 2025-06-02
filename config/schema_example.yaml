@@ -1,0 +1,121 @@
+# config/schema_example.yaml
+
+db_connection:
+  server: 'YOUR_SERVER_NAME_OR_IP' # e.g., 'localhost\\SQLEXPRESS' or 'your-azure-sql.database.windows.net'
+  database: 'PerfSimDB'            # Name of the database to use (it should exist)
+  username: 'your_db_username'     # Your SQL Server username
+  password: 'your_db_password'     # Your SQL Server password
+  driver: '{ODBC Driver 17 for SQL Server}' # Ensure this matches your installed driver
+
+schema_config:
+  tables:
+    - name: Users
+      columns:
+        - name: UserID
+          type: INT
+          primary_key: True
+          identity: True
+          nullable: False
+        - name: Username
+          type: NVARCHAR(50)
+          generator: user_name
+          unique: True
+        - name: Email
+          type: NVARCHAR(100)
+          generator: email
+          unique: True
+        - name: CreatedAt
+          type: DATETIME2
+          generator: date_time_this_year
+      row_count: 100 # Small number for a quick test
+      indexes:
+        - name: IX_Users_Email
+          columns: [Email]
+          type: UNIQUE
+
+    - name: Posts
+      columns:
+        - name: PostID
+          type: INT
+          primary_key: True
+          identity: True
+          nullable: False
+        - name: UserID # Foreign Key
+          type: INT
+          nullable: False
+          foreign_key: {table: Users, column: UserID}
+        - name: Title
+          type: NVARCHAR(200)
+          generator: sentence
+          params: {nb_words: 5}
+        - name: Content
+          type: NVARCHAR(MAX)
+          generator: text
+          params: {max_nb_chars: 500}
+        - name: PublishedAt
+          type: DATETIME2
+          generator: date_time_this_month
+      row_count: 200 # Small number
+      indexes:
+        - name: IX_Posts_UserID_PublishedAt
+          columns: [UserID, PublishedAt]
+          type: NONCLUSTERED
+
+workloads:
+  - name: Simple_User_Lookups
+    type: OLTP
+    enabled: True
+    duration_seconds: 20 # Short duration for example
+    concurrency: 2
+    queries:
+      - name: GetUserByID
+        template: "SELECT UserID, Username, Email FROM Users WHERE UserID = ?;"
+        weight: 5
+        param_generators:
+          - {type: random_int_from_column_range, table: Users, column: UserID}
+      - name: GetUserByUsername
+        template: "SELECT UserID, Username, Email FROM Users WHERE Username = ?;"
+        weight: 3
+        param_generators:
+          - {type: random_from_column_sample, table: Users, column: Username, sample_size: 50}
+
+  - name: Simple_Post_Queries
+    type: OLAP # Simplified OLAP for example
+    enabled: True
+    duration_seconds: 30 # Short duration
+    concurrency: 1
+    queries:
+      - name: GetRecentPostsByUser
+        template: |
+          SELECT TOP 5 p.PostID, p.Title, p.PublishedAt
+          FROM Posts p
+          WHERE p.UserID = ?
+          ORDER BY p.PublishedAt DESC;
+        weight: 1
+        param_generators:
+          - {type: random_int_from_column_range, table: Users, column: UserID}
+
+monitoring:
+  os_metrics: [cpu_percent, memory_percent] # Keep it light for example
+  dbms_metrics:
+    - name: wait_stats_simple
+      query: "SELECT TOP 10 wait_type, waiting_tasks_count, wait_time_ms FROM sys.dm_os_wait_stats WHERE wait_type NOT LIKE 'SLEEP%' ORDER BY wait_time_ms DESC;"
+      frequency_seconds: 15
+    - name: index_usage_stats # Will be empty initially if tables are recreated
+      query: "SELECT OBJECT_NAME(s.object_id) AS table_name, i.name AS index_name, user_seeks, user_scans, user_lookups, user_updates FROM sys.dm_db_index_usage_stats s JOIN sys.indexes i ON s.object_id = i.object_id AND s.index_id = i.index_id WHERE s.database_id = DB_ID();"
+      frequency_seconds: 20
+  monitoring_interval_seconds: 5
+
+recommendation_config:
+  heuristics:
+    - name: "Unused Indexes Example" # This might not trigger if usage is low in short test
+      dmv: "index_usage_stats"
+      condition: "user_seeks == 0 AND user_scans == 0 AND user_lookups == 0 AND user_updates > 10" # Lowered threshold for example
+      recommendation_template: "Index {index_name} on table {table_name} appears unused for reads but has {user_updates} updates. Consider reviewing."
+
+simulation_parameters:
+  global_duration_seconds: 45 # Total runtime for the entire simulation
+  data_generation_batch_size: 50
+  log_level: INFO # Use DEBUG for more verbose output
+  output_directory: "simulation_output_example" # Specific output directory
+  recreate_schema_on_run: True # Drops and recreates tables/indexes on each run
