@@ -1,0 +1,7 @@
+pyyaml
+aioodbc # For async SQL Server connection
+Faker
+psutil
+pandas # Useful for data analysis and metrics, optional for core framework
+matplotlib # For plotting, optional
+scikit-learn # For ML recommendations, optional
