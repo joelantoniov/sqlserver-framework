@@ -1,4 +1,3 @@
-"""
 # SQL Server Performance Advisor & Workload Simulator v1.0
 
 This framework is designed to model database schemas, generate realistic data,
@@ -75,4 +74,3 @@ using modern Python features like asyncio, dataclasses, and type hinting.
 - **Type Hinting:** Extensive type hints are used throughout the codebase.
 - **Enums:** Used for predefined sets of values like log levels or index types.
 - **Modular Structure:** Maintained and refined.
-"""
